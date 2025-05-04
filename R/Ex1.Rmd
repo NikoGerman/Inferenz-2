@@ -1,0 +1,298 @@
+---
+title: "ex1"
+author: "Nikolai German"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+# 1.1 Random Variable Generation
+
+## a) Implementation of Lehmer RNG
+
+We implement the Lehmer RNG:
+$$
+x_n = (ax_{n-1}) \text{ mod } m
+$$
+
+The seed $x_0$ has to be chosen beforehand, $m = 2^31 - 1$, $a = 7^5$
+
+```{r Lehmer RNG}
+LRNG <- function(n, seed = 42) {
+  m <- 2^31 -1 # .Machine$integer.max
+  a <- 7^5
+  samp <- numeric(n)
+  samp[[1]] <- (a * seed) %% m
+  for (i in seq_len(n - 1)) {
+    samp[[i + 1]] <- (a * samp[[i]]) %% m
+  }
+  return(samp / m)
+}
+```
+
+We simulate $n = 1000$ samples and plot as a histogram:
+
+```{r LRNG-sample, echo=FALSE}
+uni <- LRNG(1000)
+hist(uni)
+```
+
+## b) Implement inverse transformation method
+
+
+```{r inverse transformation}
+ITM <- function(inverse, n, seed = 42) {
+  uni <- LRNG(n = n, seed = seed)
+  inverse(uni)
+}
+```
+
+We obtain the inverse:
+\begin{align}
+&F(x) = 1 - e^{-2x} \\
+\implies &F^{-1}(q) = -0.5 * log(1 - q)
+\end{align}
+Subsequently we call ITM on the inverse. Additionally we implement the true density $f_X(x) = 2e^{-2x}$.
+
+```{r inverse transformation 2}
+Fq <- function(q) {
+  -.5 * log(1 - q)
+}
+
+fx_samp <- ITM(Fq, 1000)
+fx_true <- function(x) {2*exp(-2*x)}
+```
+
+
+We plot the true density vs. the simulated samples:
+
+```{r inverse transformation plot, echo=FALSE}
+hist(fx_samp, xlim = c(0,4), freq = FALSE, breaks = 25, xlab = "x", main = "sample vs true density")
+curve(fx_true, xlim = c(0,4), col = "red", add = TRUE, lwd = 2)
+```
+
+## c) Goodness of fit testing
+
+### Kolmogorov-Smirnov-Test
+
+```{r kolomgorov-smirnov}
+# ?ks.test
+ks.test(fx_samp, "pexp", rate = 2)
+```
+
+### $\mathcal{X}^2$-Test
+
+```{r}
+chisq <- function(samp, bins = 10, pdf, ...) {
+  tab <- table(cut(c(0, samp), breaks = bins)[2:(length(fx_samp)+1)])
+  step <- max(samp) / 10
+  p <- vapply(seq_len(bins), 
+              function(x) pdf(x*step, ...) - pdf((x - 1)*step, ...), 
+              numeric(1))
+  chisq.test(tab, p = p, rescale.p = TRUE)
+}
+```
+
+
+```{r}
+x2 <- chisq(fx_samp, pdf = pexp, rate = 2)
+x2$observed
+x2$expected
+```
+
+here something smart about what we have simulated...
+
+
+# 1.2 Rejection Sampling, Importance Sampling
+
+## a) Rejection Sampler Implementation
+
+The maximum of $exp(-x^2)$ is located at $x_0 = 0$, with a value of $exp(0) = 1$, therefore we need to scale our umbrella-distribuation to be $\geq 1$.
+
+Since the density of the Uniform-distribution an $[-a,a]$ is $\frac{1}{2a}$, we search for $\alpha$ such that $\alpha \cdot u \geq 1 \implies \alpha \geq 2a$, where $u \sim U(-a,a)$.
+
+```{r}
+rejection_sampler <- function(n_samples, a, verbose = FALSE, print.steps = FALSE) {
+  checkmate::assertIntegerish(n_samples, lower = 1, len = 1, any.missing = FALSE)
+  checkmate::assertNumeric(a, lower = .Machine$double.eps, len = 1, any.missing = FALSE)
+  checkmate::assertFlag(verbose)
+  checkmate::assertFlag(print.steps)
+  ###
+  alpha <- 2*a + .Machine$double.eps
+  f <- function(x) exp(-x^2) * (x <= a) * (x >= -a)
+  g <- function(x) (1 / 2*a) * (x <= a) * (x >= -a)
+  G_inv <- function(q) 2*a*q - a
+  ###
+  samp <- numeric(n_samples)
+  start <- 1
+  step <- 1
+  while(n_samples > 0) {
+    Y <- G_inv(runif(n_samples))
+    U <- runif(n_samples)
+    test <- U <= f(Y) / (alpha * g(Y))
+    approved <- sum(test)
+    if(verbose) {
+      cat(sprintf("step %d: approved %d of %d remaining samples...\n", 
+                  step, approved, n_samples))
+    }
+    step <- step + 1
+    if (approved > 0) {
+      samp[start:(start + approved - 1)] <- Y[test]
+      start <- start + approved
+      n_samples <- n_samples - approved
+    }
+  }
+  if(print.steps) {
+    cat(sprintf("#############\n number of necessary steps: %d \n#############\n", 
+                  step))
+  }
+  return(structure(samp, steps = step)
+  )
+}
+
+head(rejection_sampler(n = 1000, a = 1, verbose = TRUE))
+attr(rejection_sampler(n = 1000, a = 1), "steps")
+```
+
+
+## b) Sampling for different values of $a$
+We sample $n = 1000$ with $a \in \{0.1, 1, 10\}$
+
+```{r}
+tibble(a = c(.1, 1, 10)) %>%
+  mutate(x = lapply(a, function(a) rejection_sampler(1000, a))) %>%
+  unnest_longer(x) %>%
+  ggplot(aes(x)) +
+  geom_density() +
+  facet_wrap(~a, ncol = 3) +
+  theme_light()
+```
+
+something unsefull here!
+
+## c) Importance Sampling
+We want to estimate $I_a = \int_{-a}^{a} \frac{cos(x)}{1 + x^2}dx$.
+Upon multiplying with $\frac{g(x)}{g(x)} = \frac{exp(-x^2)}{exp(-x^2)}$ we obtain 
+$I_a = \mathbb{E}_{G}(h(X)\frac{f(X)}{g(X)}) = \int_{-a}^{a} \frac{1}{1 + x^2} \frac{cos(x)}{exp(-x^2)} exp(-x^2) dx$.
+
+
+```{r}
+integrand <- function(x) cos(x)/(1 + x^2)
+
+importance_sampler <- function(n = 1000, a = 1) {
+  g <- function(x) exp(-x^2)
+  ### calculate normalization constant
+  nu <- mean(g(runif(1000, -a, a))) * 2 * a
+  Y <- rejection_sampler(n_samples = n, a = a)
+  mean(integrand(Y) / g(Y) * nu)
+}
+
+importance_sampler2 <- function(n = 1000, a = 1) {
+  U <- runif(1000, -a, a)
+  ### calculate normalization constant
+  nu <- 2*a
+  mean(integrand(U) * 2 * a)
+}
+```
+
+
+```{r echo=FALSE}
+tibble(a = seq(0.1, 10, by = .1)) %>%
+  mutate(I = vapply(a, function(x) importance_sampler(n = 10000, a = x), numeric(1)),
+         I2 = vapply(a, function(x) importance_sampler2(n = 10000, a = x), numeric(1)),
+         truth = vapply(a, function(x) integrate(integrand, -x, x)$value, numeric(1))) %>%
+  ggplot(aes(a)) +
+  geom_point(aes(y = I), color = "blue", alpha = .5, size = .6) +
+  geom_point(aes(y = I2), color = "magenta", alpha = .5, size = .6) +
+  geom_line(aes(y = truth), color = "grey", lwd = 1.2, alpha = .8) +
+  scale_y_continuous(limits = c(0, pi/2)) +
+  theme_minimal() +
+  labs(y = "value", x = "a")
+
+expand_grid(n = c(10, 30, 100, 400, 2000, 10000), a = seq(0.1, 5, by = .1)) %>%
+  mutate(value = mapply(importance_sampler, n, a),
+         truth = vapply(a, function(x) integrate(integrand, -x, x)$value, numeric(1))) %>%
+  ggplot(aes(a, value)) +
+  geom_point() +
+  geom_line(aes(y = truth), color = "grey", lwd = 1.2, alpha = .8) +
+  facet_wrap(~n) +
+  scale_y_continuous(limits = c(0, pi/2)) +
+  theme_minimal()
+```
+
+
+## d) Computing standard error
+
+```{r}
+# integrand <- function(x) cos(x)/(1 + x^2)
+
+se_est <- function(n, a) {
+  g <- function(x) exp(-x^2)
+  ### calculate normalization constant
+  nu <- mean(g(runif(1000, -a, a))) * 2 * a
+  Y <- rejection_sampler(n_samples = n, a = a)
+  num <- integrate(integrand, -a, a)$value
+  est <- mean(integrand(Y) / g(Y) * nu)
+  #sigma <- sqrt(mean((g(Y) / nu - est)^2))
+  sigma <- sqrt(mean((num - est)^2))
+  return(sigma)
+}
+
+se_est(1000, 1)
+
+tibble(n = as.integer(seq(1, 300))) %>%
+  mutate(se = vapply(n, function(n) se_est(n, a = 10), numeric(1))) %>%
+  ggplot(aes(n, se)) +
+  geom_point()
+
+integrate(integrand, -.1, .1)$value
+importance_sampler(1000, a = .1) * integrate(function(x) exp(-x^2), -.1, .1)$value
+importance_sampler2(1000, a = pi/2)
+```
+
+
+```{r}
+mc.test <- function(a) {
+  c(mc = mean(exp(-runif(5000, -a, a)^2) * 2 * a),
+       num = integrate(function(x) exp(-x^2), -a, a)$value)
+}
+
+tibble(a = seq(.1, 20, by = .025)) %>%
+  mutate(mc.test = lapply(a, mc.test)) %>%
+  unnest_wider(mc.test) %>%
+  ggplot(aes(x=a)) +
+  geom_line(aes(y = num), color = "lightblue", lwd = 2) +
+  geom_point(aes(y = mc), color = "red", alpha = .3, size = .3) +
+  theme_light()
+```
+
+
+## e) Can this method be used for $a \to \infty$?
+By using very large values for $a$, the amount of rejected samples is increasing sharply.
+
+The amount of steps needed to compute the rejection sample for incresing values of $a$ are shown below.
+The number of steps can be interpreted as complexity of the operation. It can be visually approximated that $steps = \mathcal{O}(a^3), a \in [0, 20]$
+
+```{r include=FALSE}
+df <- tibble(a = seq(0.1, 20, by = 0.1),
+       steps = vapply(a, function(x) attr(rejection_sampler(1000, a = x), "steps"), numeric(1)))
+saveRDS(df, "ex1_data.RDS")
+```
+
+
+```{r echo=FALSE}
+df <- readRDS("ex1_data.RDS")
+df %>%
+  ggplot(aes(a, steps)) +
+  geom_point() +
+  geom_line(aes(y = (2*a)^3), color = "blue", lwd = 1.2) +
+  theme_light()
+```
+
+
