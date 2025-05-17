@@ -1,12 +1,12 @@
 ---
-title: "ex1"
-author: "Nikolai German"
+title: "Problemset 1"
+author: "Nikolai German (12712506)"
 date: "`r Sys.Date()`"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
@@ -102,11 +102,16 @@ chisq <- function(samp, bins = 10, pdf, ...) {
 
 ```{r}
 x2 <- chisq(fx_samp, pdf = pexp, rate = 2)
+x2$p.value
 x2$observed
 x2$expected
 ```
 
-here something smart about what we have simulated...
+Since the the $\mathcal{X}^2$-Test uses binning, it may be able to smooth out little deviations from the expectation.
+We would expect a higher p-value for the Kolmogorov-Smirnov-Test, if we would have simulated more samples.
+```{r}
+ks.test(ITM(Fq, 100000), "pexp", rate = 2)
+```
 
 
 # 1.2 Rejection Sampling, Importance Sampling
@@ -174,7 +179,7 @@ tibble(a = c(.1, 1, 10)) %>%
   theme_light()
 ```
 
-something unsefull here!
+With bigger $a$, we see that we have a bigger variance in the cdf.
 
 ## c) Importance Sampling
 We want to estimate $I_a = \int_{-a}^{a} \frac{cos(x)}{1 + x^2}dx$.
@@ -193,6 +198,7 @@ importance_sampler <- function(n = 1000, a = 1) {
   mean(integrand(Y) / g(Y) * nu)
 }
 
+## sampler2: use density of continious uniform function on [-a,a]
 importance_sampler2 <- function(n = 1000, a = 1) {
   U <- runif(1000, -a, a)
   ### calculate normalization constant
@@ -202,24 +208,30 @@ importance_sampler2 <- function(n = 1000, a = 1) {
 ```
 
 
+Plot the samples (blue) for different values of $a$. The grey line is the numerical solution to the integral.
+
 ```{r echo=FALSE}
 tibble(a = seq(0.1, 10, by = .1)) %>%
   mutate(I = vapply(a, function(x) importance_sampler(n = 10000, a = x), numeric(1)),
-         I2 = vapply(a, function(x) importance_sampler2(n = 10000, a = x), numeric(1)),
+         #I2 = vapply(a, function(x) importance_sampler2(n = 10000, a = x), numeric(1)),
          truth = vapply(a, function(x) integrate(integrand, -x, x)$value, numeric(1))) %>%
   ggplot(aes(a)) +
   geom_point(aes(y = I), color = "blue", alpha = .5, size = .6) +
-  geom_point(aes(y = I2), color = "magenta", alpha = .5, size = .6) +
+  #geom_point(aes(y = I2), color = "magenta", alpha = .5, size = .6) +
   geom_line(aes(y = truth), color = "grey", lwd = 1.2, alpha = .8) +
   scale_y_continuous(limits = c(0, pi/2)) +
   theme_minimal() +
   labs(y = "value", x = "a")
+```
 
+Show behaviour for different values of $n$:
+
+```{r echo=FALSE}
 expand_grid(n = c(10, 30, 100, 400, 2000, 10000), a = seq(0.1, 5, by = .1)) %>%
   mutate(value = mapply(importance_sampler, n, a),
          truth = vapply(a, function(x) integrate(integrand, -x, x)$value, numeric(1))) %>%
   ggplot(aes(a, value)) +
-  geom_point() +
+  geom_point(color = "blue", alpha = .5, size = .6) +
   geom_line(aes(y = truth), color = "grey", lwd = 1.2, alpha = .8) +
   facet_wrap(~n) +
   scale_y_continuous(limits = c(0, pi/2)) +
@@ -229,46 +241,48 @@ expand_grid(n = c(10, 30, 100, 400, 2000, 10000), a = seq(0.1, 5, by = .1)) %>%
 
 ## d) Computing standard error
 
-```{r}
-# integrand <- function(x) cos(x)/(1 + x^2)
+We compute the standard error as $var[I_a] = var[\mathbb{E}_{G}(h(X)\frac{f(X)}{g(X)})] = \frac{var[h(X)\frac{f(X)}{g(X)}]}{n}$
 
+```{r}
 se_est <- function(n, a) {
   g <- function(x) exp(-x^2)
+  integrand <- function(x) cos(x)/(1 + x^2)
   ### calculate normalization constant
   nu <- mean(g(runif(1000, -a, a))) * 2 * a
   Y <- rejection_sampler(n_samples = n, a = a)
-  num <- integrate(integrand, -a, a)$value
-  est <- mean(integrand(Y) / g(Y) * nu)
-  #sigma <- sqrt(mean((g(Y) / nu - est)^2))
-  sigma <- sqrt(mean((num - est)^2))
+  sigma <- sqrt(var(integrand(Y) / g(Y) * nu) / n)
   return(sigma)
 }
-
-se_est(1000, 1)
-
-tibble(n = as.integer(seq(1, 300))) %>%
-  mutate(se = vapply(n, function(n) se_est(n, a = 10), numeric(1))) %>%
-  ggplot(aes(n, se)) +
-  geom_point()
-
-integrate(integrand, -.1, .1)$value
-importance_sampler(1000, a = .1) * integrate(function(x) exp(-x^2), -.1, .1)$value
-importance_sampler2(1000, a = pi/2)
 ```
 
 
-```{r}
-mc.test <- function(a) {
-  c(mc = mean(exp(-runif(5000, -a, a)^2) * 2 * a),
-       num = integrate(function(x) exp(-x^2), -a, a)$value)
+Plotting se over a, for different n yields:
+
+```{r echo=FALSE}
+expand_grid(n = c(100, 400, 2000, 10000), a = c(0.1, 1, 10)) %>%
+  mutate(se = mapply(se_est, n, a)) %>%
+  ggplot(aes(as.factor(n), se, group = as.factor(n))) +
+  geom_point() +
+  scale_y_log10() +
+  facet_wrap(~a, scales = "free_y") +
+  theme_light() +
+  labs(y = "standarderror", x = "n")
+```
+
+Plotting the samples for different n over a vs. the expected value:
+
+```{r echo=FALSE}
+mc.test <- function(n = 1000, a) {
+  mean(exp(-runif(n, -a, a)^2) * 2 * a)
 }
 
-tibble(a = seq(.1, 20, by = .025)) %>%
-  mutate(mc.test = lapply(a, mc.test)) %>%
-  unnest_wider(mc.test) %>%
+expand_grid(n = c(100, 400, 2000, 10000), a = seq(0.1, 20, by = .1)) %>%
+  mutate(mc = mapply(mc.test, n, a),
+         num = vapply(a, function(a) integrate(function(x) exp(-x^2), -a, a)$value, numeric(1))) %>%
   ggplot(aes(x=a)) +
-  geom_line(aes(y = num), color = "lightblue", lwd = 2) +
+  geom_line(aes(y = num), color = "lightblue", lwd = 1.2) +
   geom_point(aes(y = mc), color = "red", alpha = .3, size = .3) +
+  facet_wrap(~n) +
   theme_light()
 ```
 

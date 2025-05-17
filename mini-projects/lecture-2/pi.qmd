@@ -1,0 +1,45 @@
+---
+title: "pi"
+format: revealjs
+editor: visual
+---
+
+```{r setup}
+#| echo: false
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+#| echo: true
+
+pi_samp <- function(n) {
+  res <- numeric(n)
+  for (i in seq_len(n)) {
+    x <- runif(1000)
+    y <- runif(1000)
+    tmp <- (x^2 + y^2) <= 1
+    res[[i]] <-4 * mean(tmp)
+  }
+  mean(res)
+}
+
+pi_samp(1000)
+```
+
+\\\\
+
+```{r}
+df <- tibble(x = runif(10000, -1, 1),
+             y = runif(10000, -1, 1)) %>%
+  mutate(within = ((x^2 + y^2) <= 1))
+
+ggplot(df, aes(x, y)) +
+  geom_point(aes(color = within)) +
+  scale_x_continuous(limits = c(-1, 1)) +
+  scale_y_continuous(limits = c(-1, 1)) +
+  theme_light() +
+  guides(color = "none")
+
+mean(df$within) * 4
+```

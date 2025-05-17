@@ -1,0 +1,442 @@
+---
+title: "Problemset 3"
+author: "Nikolai German (12712506)"
+format: pdf
+editor: visual
+---
+# Exercise 2.1 - Bootstrapping
+
+## (a) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Generate one sample of size $n = 120$ (set seed 123) from the mixture distribution (i.e. generate
+each sampled point from the first component with probability 0.6 and from the second with
+probability 0.4) and compute $I_{obs} = Q_n(0.75) − Q_n(0.25)$.
+\end{addmargin}
+
+```{r}
+mixture_sample <- function(n, mu1 = 0, mu2 = 5, sigma1 = 1, sigma2 = 2, 
+                           probs = c(.5, .5), seed = NULL) {
+  checkmate::assertIntegerish(n, 
+                              len = 1, any.missing = FALSE, lower = 1)
+  checkmate::assertNumeric(mu1, 
+                           any.missing = FALSE, len = 1)
+  checkmate::assertNumeric(mu2, 
+                           any.missing = FALSE, len = 1)
+  checkmate::assertNumeric(sigma1, 
+                           any.missing = FALSE, len = 1, lower = 0)
+  checkmate::assertNumeric(sigma2, 
+                           any.missing = FALSE, len = 1, lower = 0)
+  checkmate::assertNumeric(probs, 
+                           len = 2, all.missing = FALSE, lower = 0, upper = 1)
+  
+  if (any(is.na(probs))) {
+    probs[is.na(probs)] <- 1 - probs[!is.na(probs)]
+  }
+  
+  if (sum(probs) != 1) {
+    stop("probabilities have to sum up to 1!")
+  }
+  
+  n1 <- round(probs[[1]] * n)
+  n2 <- n - n1
+  
+  res <- numeric(n)
+  
+  if(!is.null(seed)) {
+    set.seed(seed)
+  }
+  res[1:n1] <- rnorm(n1, mu1, sigma1)
+  res[(n1 + 1):n] <- rnorm(n2, mu2, sigma2)
+  
+  return(res)
+}
+```
+
+
+```{r}
+samp <- mixture_sample(n = 120, probs = c(.6, .4), seed = 123)
+```
+
+
+```{r}
+#| echo: false
+plot(density(samp, width = 4), xlab = "x", main = "empirical density of generated sample")
+```
+
+Computing $I_{obs}$:
+
+```{r}
+IQR(samp)
+```
+
+## (b) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+From the empirical distribution generated in (a), draw $B = 500$ bootstrap samples (set seed 1234)
+and compute $I_b^∗$ for each. Compute the bootstrap standard error $\hat{SE}_{boot}$ and the skewness of $\{I_b^*\}$.
+\end{addmargin}
+
+```{r}
+bootstrap_IQR <- function(samp, B, seed = NULL) {
+  checkmate::assertNumeric(samp, any.missing = FALSE, min.len = 1)
+  checkmate::assertIntegerish(B, len = 1, lower = 1, any.missing = FALSE)
+  checkmate::assertIntegerish(seed, 
+                              len = 1, lower = 1, 
+                              any.missing = FALSE, null.ok = TRUE)
+  
+  res <- numeric(B)
+  
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+  
+  for (i in seq_len(B)) {
+    bootstrap <- sample(samp, replace = TRUE)
+    res[[i]] <- IQR(bootstrap)
+  }
+  
+  structure(res, 
+            SE = sd(res), 
+            Skewness = mean(((res - mean(res)) / sd(res))^3))
+}
+```
+
+We compute the Standarderror $\hat{SE}_{boot} = \sqrt{\frac{1}{B - 1} \sum_{b=1}^B (I_b^* - \bar{I^*})^2}$ and the Skewness $\hat{\gamma}_{boot} = \frac{1}{B - 1} \sum_{b=1}^B (\frac{I_b^* - \bar{I^*}}{\hat{SE}_{boot}})^3$
+
+```{r}
+I_B <- bootstrap_IQR(samp, 500, 1234)
+attr(I_B, "SE")
+attr(I_B, "Skewness")
+```
+
+## (c) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Plot a histogram of $\{I^*_b\}$ with an overlaid kernel density estimate.
+\end{addmargin}
+
+```{r}
+#| echo: false
+plot(0, 0, xlim = c(2, 6), ylim = c(0, 1.2), type = "n", ylab = "density", xlab = latex2exp::TeX(r"($I^*_b$)"))
+hist(I_B, breaks = 15, add = TRUE, freq = FALSE)
+lines(density(I_B)$x, density(I_B)$y, lwd = 1.5, col = "blue")
+```
+## (d) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Construct a $95\%$ percentile bootstrap CI and a normal-approximation CI for the true IQR. Compare their width.
+\end{addmargin}
+
+For the 95% percentile bootstrap CI, we just look at the 2.5% and 97.5% percentiles of $\{I^*_b\}$:
+```{r}
+c(quantile(I_B, .025), quantile(I_B, .975))
+```
+
+For the normal-approximation CI we use $I \sim \mathcal{N}(\bar{I^*}, \hat{SE}_{boot})$:
+```{r}
+c("2.5%" = qnorm(.025) * attr(I_B, "SE") + mean(I_B),
+  "97.5%" = qnorm(.975) * attr(I_B, "SE") + mean(I_B))
+```
+
+We observe, that the two CIs are almost identical, the normal CI is slightly wider on the right due to the skewness.
+
+
+## (e) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Discuss: How does the mixture’s skew affect the bootstrap distribution and the reliability of the
+normal CI? What would change if n were larger?
+\end{addmargin}
+
+The bigger the skew, the less reliable the normal CI, due to the very way it is contructed using mean and se. With bigger n, the se gets smaller and the effect of the skewness therefore bigger, since the mean differs from the median.
+
+# Exercise 2.2 - Bayesian Reasoning
+
+## (a) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Compute the posterior probability of each model given the observed outcomes, using Bayes’
+theorem. Express the likelihood for each model as the product of Bernoulli likelihoods over
+the 30 days: $\mathbb{P}(x_1,..., x_{30} | M_i) = \prod_{t = 1}^{30}\pi_{it}^{x_t}(1-\pi_{it})^{1-x_t}$
+Which model is most plausible after observing the data?
+\end{addmargin}
+
+Using Bayes' Theorem, we obtain:
+
+\begin{align}
+\mathbb{P}(M_i | x_1,...,x_{30}) &= \frac{\mathbb{P}(x_1,..., x_{30} | M_i) \cdot \mathbb{P}(M_i)}{\sum_{j = 1}^4 \mathbb{P}(x_1,..., x_{30} | M_j) \cdot \mathbb{P}(M_j)} \\
+&\propto \mathbb{P}(x_1,..., x_{30} | M_i) \cdot \mathbb{P}(M_i)
+\end{align}
+
+```{r}
+#| include: false
+load("../data/Ex_3_2.RData")
+str(data)
+```
+
+
+```{r}
+prior <- c(0.3, 0.35, 0.2, 0.15)
+posterior <- rep(1, nrow(data$pi_it))
+
+for (j in seq_len(nrow(data$pi_it))) {
+  for (i in seq_along(data$x_t)) {
+    pi <- data$pi_it[j,i]
+    x <- data$x_t[[i]]
+    posterior[[j]] <- posterior[[j]] * pi^(x) * (1 - pi)^(1 - x)
+  }
+  posterior[[j]] * prior[[j]]
+}
+
+which.max(posterior)
+
+round(posterior / sum(posterior), 4)
+```
+
+## (b) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Each model provides a probability forecast $\pi_{i, new}$ for failure tomorrow. Compute the posterior predictive probability of failure tomorrow $\hat{\pi} = \mathbb{P}(\text{failure tommorow} | \text{data}) = \mathbb{P}(x=0|x_1,...,x_{30})$ as the sum of $\pi_{i, new}$, weighted by the posterior reliability of the models from (a).
+\end{addmargin}
+
+\begin{align}
+\mathbb{P}(x=0|x_1,...,x_{30}) 
+&= \sum_{i = 1}^4 p(x=0 | M_i) p(M_i | x_1,...x_{30}) \nonumber \\
+&= \sum_{i = 1}^4 \pi_{i, new} p(M_i | x_1,...x_{30})
+\end{align}
+
+```{r}
+sum(data$pi_new * posterior / sum(posterior))
+```
+
+## (c) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Suppose instead that in the 30-day window, failures had occurred on 20 days. In general, how
+would this affect the posterior model probabilities and the posterior predictive probability of
+failure tomorrow? Comment on which models become more plausible and how this affects $\hat{\pi}$.
+For this, you may first need to look at the distribution of each model’s predictions.
+\end{addmargin}
+
+Since we then would have a higher count of $x_i = 1$, the term $\pi_{it}^{x_t}$ would gain influence for every Model $M_t$. Therefore the likelihood would be higher for models, which more frequently predict a higher chance of malfunction $\pi_{it}$. 
+
+
+```{r}
+#| eval: false
+#| include: false
+plot(0,0, xlim = c(0,1), ylim = c(0,8), type = "n", 
+     xlab = latex2exp::TeX(r"($\pi$)"), ylab = "density",
+     main = "Predictions by Models")
+for (i in seq_len(4)) {
+  lines(density(data$pi_it[i,])$x, density(data$pi_it[i,])$y, col = i)
+}
+```
+
+Let's have a look at the distribution of each models predictions:
+
+```{r}
+par(mfrow = c(2,2))
+for (i in seq_len(4)) {
+  plot(density(data$pi_it[i,]), 
+       xlim = c(0, 1), ylim = c(0,8), 
+       main = sprintf("Model %d", i),
+       xlab = latex2exp::TeX(r"($\pi$)"))
+}
+```
+
+Models 2 and 4 predict rather high values for $\pi$. Therefore the likelihood would be higher for these models. Since there are nevertheless around 33% of cases of $x_i = 0$, the likelihood of Model 2 would be probably higher than the one of Model 4.
+
+Looking at predictive probability, we will observe, that the predictions of models 2 & 4 get weighted more heavily in comparison to models 1 & 3. Thus resulting in the predictive probability beeing closer on those two predictions.
+
+# Exercise 2.3 - Conjugate Priors
+
+## (a) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Explain the concept of a conjugate prior.
+\end{addmargin}
+
+The Key of Bayesian Inference is *Bayes' Theorem*:
+
+\begin{equation}
+\mathbb{P}(A|B) = \frac{\mathbb{P}(A \cup B)}{\mathbb{P}(B)}
+\end{equation}
+
+We can translate Bayes' Theorem when working with distributions:
+
+\begin{equation}
+p(\theta | x) = \frac{f(x;\theta) \cdot p(\theta)}{\int f(x;\tilde{\theta}) \cdot p(\tilde{\theta}) d\tilde{\theta}} \label{eq:1}
+\end{equation}
+
+Where $p(\theta)$ is the prior information or assumption we have on the paramter $\theta$, which itself is treated as a RV. The Likelihood of the sample given some parameter $\theta$ is $f(x;\theta)$.  This way we can compute the *posterior* $p(\theta | x)$. Basically, we update the *prior* through our observations.
+
+Since $\int f(x;\tilde{\theta}) \cdot p(\tilde{\theta}) d\tilde{\theta}$ does not depend on $\theta$ an acts as normalization constant, we can rewrite \eqref{eq:1} as
+
+\begin{equation}
+p(\theta | x) \propto f(x;\theta) \cdot p(\theta) \label{eq:2}
+\end{equation}
+
+While this is a very powerfull approach it also bares some difficulties: $p(\theta | x)$ does not neccessarily take the form of an known distribution. Furthermore, if we'd try to obtain the density of $p(\theta | x)$, $f(x;\tilde{\theta}) \cdot p(\tilde{\theta}) d\tilde{\theta}$ can be analytically unsolveable. Monte-Carlo Integration is a way to overcome this, nevertheless the first problem stays.
+
+Therefore it would be handy, if we could find a pair of likelihood and prior in that way, that the posterior belongs to a known distribution. That's what a conjugate prior is: a prior to a likelihood in such way, that the posterior is from the same family of distributions as the prior distribution (see Definition 9.1).
+
+## (b) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Show that the gamma distribution is a conjugate prior for the exponential likelihood 
+by computing the posterior distribution. State the setup and explain your steps.
+\end{addmargin}
+
+We observe the following:
+
+\begin{align}
+X_i|\lambda &\sim Exp(\lambda) \\
+\lambda &\sim Gamma(\alpha, \beta)
+\end{align}
+
+So the prior is the distribution $p(\lambda; \alpha, \beta)$ and the likelihood is 
+$f(x; \lambda) = \prod_{i=1}^n f(x_i; \lambda)$. Subsequently using \eqref{eq:2}, we can obtain:
+
+\begin{equation}
+p(\lambda;x) \propto \biggl[ \prod_{i=1}^n f(x_i; \lambda) \biggr] \cdot p(\lambda; \alpha, \beta)
+\end{equation}
+
+Plugging in the distributions for prior and likelihood, gives us:
+
+\begin{align}
+p(\lambda;x) 
+&\propto \biggl[ \prod_{i=1}^n \lambda e^{-\lambda x_i} \biggr] \cdot \lambda^{\alpha - 1} e^{-\beta \lambda} \nonumber \\
+&= \lambda^n e^{-\lambda \cdot n \bar{x}} \lambda^{\alpha - 1} e^{-\beta \lambda} \nonumber \\
+&= \lambda^{n + \alpha -1} e^{-\lambda (\beta + n \bar{x})} \label{eq:3}
+\end{align}
+
+We can see easily, that \eqref{eq:3} is the core of a $Gamma(\alpha + n,\beta + n\bar{x})$ Distribution.
+Therefore we conclude:
+
+\begin{equation}
+\lambda|x \sim Gamma(\alpha + n,\beta + n\bar{x}) \label{eq:4}
+\end{equation}
+
+
+## (c)
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Your prior knowledge on $\lambda$ can be captured by $Gamma(2, 3)$. You have now collected a sample
+$x = (1, 1, 2, 1, 3, 1, 4, 6, 1, 1)$. Specify the updated posterior parameters $\alpha^*$ and $\beta^*$ and compute the posterior mean $\mathbb{E}(\lambda^*)$.
+\end{addmargin}
+
+Using \eqref{eq:4}, we can compute $\alpha^*$ and $\beta^*$ easily:
+
+\begin{align}
+\alpha^* &= \alpha + n = 12 \\
+\beta^* &= \beta + n\bar{x} = 24
+\end{align}
+
+We know that for a Gamma distributed RV $Y$ ist holds that $\mathbb{E}(Y)=\frac{\alpha}{\beta}$. Therefore we obtain
+
+\begin{align*}
+\mathbb{E}(\lambda^*) &= \mathbb{E}(\lambda | x) \\
+&= \frac{\alpha^*}{\beta^*} \\
+&= \frac{1}{2}
+\end{align*}
+
+## (d)
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+What are the advantages and disadvantages of using conjugate priors?
+Discuss how these properties affect the choice of prior distribution and the resulting posterior inference.
+\end{addmargin}
+
+
+```{r}
+#| echo: false
+alpha <- c(2, 12)
+beta <- c(3, 24)
+cols <- c("lightblue", "darkblue")
+
+plot(0, 0, xlim = c(0, 2), ylim = c(0, 3), type = "n", ylab = "density", xlab = latex2exp::TeX(r"($\lambda$)"))
+# abline(v = 10/21, col = "magenta", lty = "dashed")
+
+for(i in seq_along(alpha))
+  curve(dgamma(x, shape = alpha[[i]], rate = beta[[i]]), col = cols[[i]], add = TRUE)
+
+for(i in seq_along(alpha))
+  abline(v = alpha[[i]]/beta[[i]], col = cols[[i]], lty = "dashed")
+
+text(0.38, .3, latex2exp::TeX(r"(${E}(\lambda|x)$)"), col = "darkblue")
+text(0.766, 1.5, latex2exp::TeX(r"(${E}(\lambda)$)"), col = "lightblue")
+```
+
+
+```{r}
+#| echo: false
+alpha <- c(2, 12)
+beta <- c(3, 24)
+cols <- c("lightblue", "darkblue")
+
+plot(0, 0, xlim = c(0, 2), ylim = c(0, 3), type = "n", ylab = "density", xlab = latex2exp::TeX(r"($\lambda$)"))
+abline(v = 10/21, col = "magenta", lty = "dashed")
+text(0.4, .3, latex2exp::TeX(r"($\hat{\lambda}_{ML}$)"), col = "magenta")
+text(0.62, .3, latex2exp::TeX(r"(${E}(\lambda|x)$)"), col = "darkblue")
+
+for(i in 2)
+  curve(dgamma(x, shape = alpha[[i]], rate = beta[[i]]), col = cols[[i]], add = TRUE)
+
+for(i in 2)
+  abline(v = alpha[[i]]/beta[[i]], col = cols[[i]], lty = "dashed")
+```
+Advantages
+\begin{itemize}
+\item Mathematical tractability: Conjugate priors yield closed-form posterior distributions, eliminating the need for complex numerical methods like MCMC.
+
+\item Computational efficiency: The posterior parameters can be derived through simple algebraic operations on the prior parameters and data statistics.
+
+\item Sequential updating: The posterior can serve as the prior for new data, making them ideal for online learning and streaming data scenarios.
+
+\item Interpretability: The parameters of conjugate priors often have clear interpretations as "prior observations" or "pseudo-counts."
+
+\item Consistency: As sample size increases, the influence of any proper conjugate prior diminishes, ensuring consistency of inference.
+\end{itemize}
+
+Disadvantages
+
+\begin{itemize}
+\item Limited flexibility: Conjugate priors cannot always express complex prior beliefs or multimodal distributions.
+
+\item Potential misspecification: Choosing a prior based on mathematical convenience rather than actual domain knowledge may misrepresent true prior beliefs.
+
+\item Restrictive assumptions: Many conjugate relationships depend on specific likelihood functions, limiting their applicability across different models.
+
+\item Oversimplification: Real-world phenomena often involve more complex relationships than conjugate models can capture.
+
+\item Sensitivity to hyperparameters: Poor choice of hyperparameters can significantly bias inference, especially with small datasets.
+\end{itemize}
+
+When selecting priors, the choice between conjugate and non-conjugate options involves several considerations:
+
+\begin{itemize}
+\item Problem complexity: For routine analyses with standard distributions, conjugate priors may be sufficient, while complex phenomena might require more flexible non-conjugate priors.
+
+\item Computational resources: Limited resources favor conjugate priors for their efficiency.
+
+\item Sample size: With large datasets, the prior's influence diminishes, making conjugate priors more acceptable even when imperfect.
+
+\item Prior knowledge: When strong prior information exists in a form incompatible with conjugate families, non-conjugate priors may be necessary despite computational costs.
+\end{itemize}
+
+The choice of conjugate priors affects posterior inference in several ways:
+
+\begin{itemize}
+\item Analytical solutions: Conjugate priors provide exact posterior distributions rather than approximations.
+
+\item Uncertainty quantification: The closed-form nature facilitates straightforward credible interval calculations.
+
+\item Posterior predictive distributions: Often available in closed form with conjugate priors, enabling efficient prediction.
+
+\item Robustness: The structured form of conjugate posteriors may be less robust to outliers compared to more flexible alternatives.
+
+\item Regularization: Conjugate priors naturally provide regularization, which can be beneficial for small sample problems.
+\end{itemize}
+
+
