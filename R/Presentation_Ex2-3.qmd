@@ -1,0 +1,206 @@
+---
+title: "Conjugate Priors"
+author: "Nikolai German"
+date: 05-21-2025
+date-format: "DD.MM.YYYY"
+format:
+  revealjs:
+    slide-number: c
+    embed-resources: true
+    fig-align: center
+    smaller: false
+    footer: "Exercise 2.3 - Conjugate Priors"
+    theme: white
+editor: visual
+---
+
+[Let]{.fragment .semi-fade-out fragment-index="1"} [$X = (X_1,\dots, X_n)$ be an i.i.d. exponentially distributed random vector]{.fragment .highlight-blue fragment-index="1"} [with parameter $\lambda$, that is $X_i \sim Exp(\lambda), i = 1,\dots, n$.
+We are interested in the distribution of the unknown parameter $\lambda$, and assume a gamma distribution for $\lambda$, so that]{.fragment .semi-fade-out fragment-index="1"} [$\lambda \sim Gamma(\alpha, \beta)$]{.fragment .highlight-blue fragment-index="1"} [and]{.fragment .semi-fade-out fragment-index="1"} [$X_i|\lambda \sim Exp(\lambda)$]{.fragment .highlight-blue fragment-index="1"}[.
+The density of the exponential distribution is given by: $f(x; \lambda) = \lambda e^{− \lambda x}$.
+For a gamma distributed variable Y, it holds that $f(y; α, β) \propto y^{\alpha−1}e^{− \beta y}$ with the expected value given by $\mathbb{E}(Y) = \frac{\alpha}{\beta}$.]{.fragment .semi-fade-out fragment-index="1"}
+
+---
+
+[(a) Explain the concept of a conjugate prior.]{style="color:gray;"}
+
+---
+
+Using Bayes Theorem' with parameterized densities, we can obtain the following:
+
+$$
+\begin{equation}
+p(\theta | x) = \frac{f(x | \theta) \cdot p(\theta)}{\int f(x | \tilde{\theta}) \cdot p(\tilde{\theta}) d\tilde{\theta}} \label{eq:1}
+\end{equation}
+$$ {#eq-bayes}
+
+Where: 
+
+  - $p(\theta)$ is the prior distribution of the paramter $\theta$
+  - $f(x | \theta)$ is the likelihood of a sample $x$ given $\theta$
+  - $p(\theta | x)$ is the posterior distribution of $\theta$ given the sample $x$ 
+
+---
+
+- We observe two challenges:
+
+  - $p(\theta | x)$ does not neccessarily take the form of an known distribution
+  - $\int f(x | \tilde{\theta}) \cdot p(\tilde{\theta}) d\tilde{\theta}$ can be analytically unsolveable
+
+- A way to overcome these challenges is the following:
+
+  Find a pair of likelihood and prior, so the resulting posterior belongs to a tractable distribution.
+
+---
+
+- The idea of a *conjugate prior* goes even further: 
+
+  **A prior is called conjugate to a likelihood, if the posterior distribution is from the same family of distributions as the prior distribution.**
+
+- Such a prior distribution does not need to exist.
+---
+
+[(b) Show that the gamma distribution is a conjugate prior for the exponential likelihood 
+by computing the posterior distribution. State the setup and explain your steps.]{style="color:gray;"}
+
+---
+
+We want to show the following:
+
+$$
+p(\lambda | x) \sim Gamma(\alpha^*, \beta^*)
+$$
+
+We identify the likelihood as:
+
+$$
+f(x | \lambda) = \prod_{i=1}^n f(x_i | \lambda) = \prod_{i=1}^n \lambda e^{-\lambda x_i}
+$$
+
+and the prior distribution as:
+
+$$
+p(\lambda | \alpha, \beta) \propto \lambda^{\alpha - 1} e^{-\beta \lambda}
+$$
+
+---
+
+Subsequently using @eq-bayes, we can obtain:
+
+$$
+p(\lambda | x) \propto \biggl[ \prod_{i=1}^n f(x_i | \lambda) \biggr] \cdot p(\lambda | \alpha, \beta)
+$$
+
+Plugging in the likelihood and the priors' distribution, gives us:
+
+$$
+\begin{align}
+p(\lambda | x) 
+&\propto \biggl[ \prod_{i=1}^n \lambda e^{-\lambda x_i} \biggr] \cdot \lambda^{\alpha - 1} e^{-\beta \lambda} \nonumber \\
+&= \lambda^n e^{-\lambda \cdot n \bar{x}} \lambda^{\alpha - 1} e^{-\beta \lambda} \nonumber \\
+&= \lambda^{n + \alpha -1} e^{-\lambda (\beta + n \bar{x})} \label{eq:3}
+\end{align}
+$$ {#eq-posterior}
+
+---
+
+We observe, that @eq-posterior is the core of a $Gamma(\alpha + n,\beta + n\bar{x})$ distribution.
+
+Therefore we conclude:
+
+$$
+\begin{equation}
+\lambda|x \sim Gamma(\alpha + n,\beta + n\bar{x}) \label{eq:4}
+\end{equation}
+$$ {#eq-posterior2}
+
+---
+
+[(c) Your prior knowledge on $\lambda$ can be captured by $Gamma(2, 3)$. You have now collected a sample
+$x = (1, 1, 2, 1, 3, 1, 4, 6, 1, 1)$. Specify the updated posterior parameters $\alpha^*$ and $\beta^*$ and compute the posterior mean $\mathbb{E}(\lambda^*)$.]{style="color:gray;"}
+
+---
+
+Using @eq-posterior2, $n = 10$ and $n\bar{x} = 21$, we can compute $\alpha^*$ and $\beta^*$ easily:
+
+$$
+\begin{align}
+\alpha^* &= \alpha + n = 12 \\
+\beta^* &= \beta + n\bar{x} = 24
+\end{align}
+$$
+
+We know that for a Gamma distributed RV $Y \sim Gamma(\alpha, \beta)$ ist holds that $\mathbb{E}(Y)=\frac{\alpha}{\beta}$. 
+
+Therefore we obtain
+
+$$
+\mathbb{E}(\lambda^*) = \frac{\alpha^*}{\beta^*} = \frac{1}{2}
+$$
+
+---
+
+```{r}
+#| echo: false
+
+par(mfrow = c(1,2))
+
+alpha <- c(2, 12)
+beta <- c(3, 24)
+cols <- c("lightblue", "darkblue")
+
+plot(0, 0, xlim = c(0, 2), ylim = c(0, 3), type = "n", ylab = "density", xlab = latex2exp::TeX(r"($\lambda$)"), main = "posterior vs. prior distribution")
+# abline(v = 10/21, col = "magenta", lty = "dashed")
+
+for(i in seq_along(alpha))
+  curve(dgamma(x, shape = alpha[[i]], rate = beta[[i]]), col = cols[[i]], add = TRUE)
+
+for(i in seq_along(alpha))
+  abline(v = alpha[[i]]/beta[[i]], col = cols[[i]], lty = "dashed")
+
+text(0.36, .2, latex2exp::TeX(r"(${E}(\lambda|x)$)"), col = "darkblue")
+text(0.78, 1.5, latex2exp::TeX(r"(${E}(\lambda)$)"), col = "lightblue")
+
+plot(0, 0, xlim = c(0, 2), ylim = c(0, 3), type = "n", ylab = "density", xlab = latex2exp::TeX(r"($\lambda$)"), main = "posterior expected value vs. MLE")
+abline(v = 10/21, col = "magenta", lty = "dashed")
+text(0.37, .3, latex2exp::TeX(r"($\hat{\lambda}_{ML}$)"), col = "magenta")
+text(0.65, .3, latex2exp::TeX(r"(${E}(\lambda|x)$)"), col = "darkblue")
+
+for(i in 2)
+  curve(dgamma(x, shape = alpha[[i]], rate = beta[[i]]), col = cols[[i]], add = TRUE)
+
+for(i in 2)
+  abline(v = alpha[[i]]/beta[[i]], col = cols[[i]], lty = "dashed")
+```
+---
+
+[(d) What are the advantages and disadvantages of using conjugate priors?
+Discuss how these properties affect the choice of prior distribution and the resulting posterior inference.]{style="color:gray;"}
+
+---
+
+Advantages
+
+- conjugate priors yield closed-form posteriors
+- the posterior can be easily interpreted as the prior with updated parameters
+- with growing sample size, the approach yields the same result as the frequentist approach
+
+---
+
+Disadvantages
+
+- choosing a prior based on mathematical convenience may result in a missspecification
+- limited possibilities
+- oversimplification of real-world relationsships
+
+---
+
+Choice of priors and posterior inference
+
+- priors should be chosen carefully, incorporating domain knowledge while maximizing entropy
+- if computation is a sparse ressource, conjugated priors could be favorable
+- for big n, the choice of prior becomes less important
+- posterior inference can be done analytically
+- uncertainty quantification through the posterior distribution
+
+
+
