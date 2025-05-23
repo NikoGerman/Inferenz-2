@@ -17,7 +17,7 @@ editor: visual
 [Let]{.fragment .semi-fade-out fragment-index="1"} [$X = (X_1,\dots, X_n)$ be an i.i.d. exponentially distributed random vector]{.fragment .highlight-blue fragment-index="1"} [with parameter $\lambda$, that is $X_i \sim Exp(\lambda), i = 1,\dots, n$.
 We are interested in the distribution of the unknown parameter $\lambda$, and assume a gamma distribution for $\lambda$, so that]{.fragment .semi-fade-out fragment-index="1"} [$\lambda \sim Gamma(\alpha, \beta)$]{.fragment .highlight-blue fragment-index="1"} [and]{.fragment .semi-fade-out fragment-index="1"} [$X_i|\lambda \sim Exp(\lambda)$]{.fragment .highlight-blue fragment-index="1"}[.
 The density of the exponential distribution is given by: $f(x; \lambda) = \lambda e^{− \lambda x}$.
-For a gamma distributed variable Y, it holds that $f(y; α, β) \propto y^{\alpha−1}e^{− \beta y}$ with the expected value given by $\mathbb{E}(Y) = \frac{\alpha}{\beta}$.]{.fragment .semi-fade-out fragment-index="1"}
+For a gamma distributed variable Y, it holds that $f(y; \alpha, \beta) \propto y^{\alpha−1}e^{− \beta y}$ with the expected value given by $\mathbb{E}(Y) = \frac{\alpha}{\beta}$.]{.fragment .semi-fade-out fragment-index="1"}
 
 ---
 
