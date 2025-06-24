@@ -1,0 +1,158 @@
+---
+title: "Problemset 4"
+author: "Nikolai German (12712506)"
+format: pdf
+editor: visual
+---
+
+# Exercise 5.2 - Local Monte Carlo Sampling
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+ex
+\end{addmargin}
+
+## (a) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Implement the above procedure in R to simulate $S$ versions of $f(x^∗)$ on the grid. What do you
+have to keep in mind to obtain $S$ independent samples? Choose reasonable values for $m, a, b, J$, and $\sigma$.
+\end{addmargin}
+
+```{r}
+gibbs.sample <- function(x_known, y_known, m, J, sigma = 1, a = 0, b = 1, interpolate = FALSE) {
+  checkmate::assertNumeric(x_known, any.missing = FALSE)
+  checkmate::assertNumeric(y_known, len = length(x_known), any.missing = FALSE)
+  # check a, b, sigma
+  
+  x0 <- tidyr::full_seq(c(a, x_known, b), 1/(m))
+  x0_pos <- vapply(x_known, function(x) which(abs(x0 - x) < 1e-8), integer(1))
+  y0 <- rep(NA, length(x0))
+  y0[x0_pos] <- y_known
+  sims <- matrix(nrow = length(x0), ncol = J + 2)
+  sims[,1] <- x0
+  sims[,2] <- y0
+  
+  for (i in seq_len(J)) {
+    if (i == 1) {
+      if (interpolate) {
+        sims[, i+2] <- approxfun(seq_len(nrow(sims)), sims[,2])(seq_len(nrow(sims)))
+        #sims[is.na(sims[, i+2]), i+2] <- rnorm(sum(is.na(sims[, i+2])), mean(y_known), sd(y_known))
+        sims[seq_len(min(pos_x - 1)), i+2] <- sims[min(pos_x), i+2]
+        sims[seq(max(pos_x + 1), nrow(sims)), i+2] <- sims[max(pos_x), i+2]
+      } else {
+        sims[, i+2] <- rnorm(nrow(sims), mean(y_known), sd(y_known))
+      }
+    } else {
+      for (j in seq_len(nrow(sims))) {
+        if (j %in% x0_pos) {
+          sims[j, i + 2] <- sims[j, 2]
+        } else if (j == 1) {
+          mu <- sims[j, i + 1]
+          sims[j, i + 2] <- rnorm(1, mu, sigma)
+        } else if (j == nrow(sims)) {
+          mu <- sims[j - 1, i + 2]
+          sims[j, i + 2] <- rnorm(1, mu,  sigma)
+        } else {
+          mu <- 0.5*(sims[j - 1, i + 2] + sims[j + 1, i + 1])
+          sims[j, i + 2] <- rnorm(1, mu, sigma)
+        }
+      }
+    }
+  }
+  structure(sims,
+            x_known = x_known,
+            y_known = y_known,
+            pos_x = x0_pos,
+            J = J)
+}
+```
+
+
+## (b) 
+\begin{addmargin}[20pt]{0pt}
+\color{gray}
+Use your function to generate at least $S = 250$ independent simulations $y^{∗(s)}, \hspace{1cm} s = 1, . . . , S$. Plot all simulated curves $(x^∗, y^{∗(s)})$ as line plots in a single figure. Highlight the known data points
+$(x_k, y_k)$ using distinct markers (e.g., dots). Comment on the resulting visualization. What does
+it reveal about the uncertainty in the function’s values across different regions of the domain?
+How could you formally quantify the uncertainty at each grid point $x^∗_i$?
+\end{addmargin}
+
+```{r}
+#| warning: false
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+
+x_known <- c(0.1, 0.12, 0.18, 0.43, 0.51, 0.68, 0.86, 0.95)
+y_known <- c(0.3750, 0.3015, 0.0927, 0.2374, -0.5391, -0.0649, 0.3946, -0.4626)
+
+set.seed(123)
+sims <- gibbs.sample(x_known, y_known, 500, 250, sigma = .1, interpolate = FALSE)
+set.seed(123)
+sims_inter <- gibbs.sample(x_known, y_known, 500, 250, sigma = .1, interpolate = TRUE)
+
+par(mfrow = c(1,3))
+plot(sims[,1],sims[,3], type = "l", main = "first iteration", xlab = "x", ylab = "y", ylim = c(-1.5, 1.5))
+lines(sims_inter[,1],sims_inter[,3], add = TRUE, col = "blue", lwd = 2)
+points(x_known, y_known, col = "red", lwd = 2)
+
+plot(sims[,1],sims[,4], type = "l", main = "second iteration", xlab = "x", ylab = "y", ylim = c(-1.5, 1.5))
+lines(sims_inter[,1],sims_inter[,4], add = TRUE, col = "blue")
+points(x_known, y_known, col = "red", lwd = 2)
+
+plot(sims[,1],sims[,252], type = "l", main = "last iteration", xlab = "x", ylab = "y", ylim = c(-1.5, 1.5))
+lines(sims_inter[,1],sims_inter[,252], add = TRUE, col = "blue")
+points(x_known, y_known, col = "red", lwd = 2)
+```
+
+
+```{r}
+#| warning: false
+p_sims <- as_tibble(sims) %>%
+  tidyr::pivot_longer(-c(V1, V2), names_to = "S", values_to = "y") %>%
+  ggplot(aes(V1, y, group = S)) +
+  geom_line(alpha = .05) +
+  geom_point(aes(y = V2), color = "red", alpha = .9, shape = 3, size = 2.5) +
+  labs(x = "x", y = "y", title = "random y0") +
+  scale_y_continuous(limits = c(-2.5, 2.5)) +
+  theme_light()
+
+p_sims_inter <- as_tibble(sims_inter) %>%
+  tidyr::pivot_longer(-c(V1, V2), names_to = "S", values_to = "y") %>%
+  ggplot(aes(V1, y, group = S)) +
+  geom_line(alpha = .05) +
+  geom_point(aes(y = V2), color = "red", alpha = .9, shape = 3, size = 2.5) +
+  labs(x = "x", y = "y", title = "interpolated y0") +
+  scale_y_continuous(limits = c(-2.5, 2.5)) +
+  theme_light()
+
+(p_sims | p_sims_inter) + plot_layout(axes = "collect", guides = "collect")
+```
+
+```{r}
+p_var <- as_tibble(sims) %>%
+  rowwise() %>%
+  mutate(Var = var(c_across(V3:V252)))  %>%
+  select(V1, Var) %>%
+  ggplot(aes(V1, Var)) +
+  geom_line() +
+  geom_vline(xintercept = x_known, color = "red", lty = "dashed") +
+  labs(x = "x", y = "variance", title = "random y0") +
+  scale_y_continuous(limits = c(0, .3)) +
+  theme_light()
+
+p_var_inter <- as_tibble(sims_inter) %>%
+  rowwise() %>%
+  mutate(Var = var(c_across(V3:V252)))  %>%
+  select(V1, Var) %>%
+  ggplot(aes(V1, Var)) +
+  geom_line() +
+  geom_vline(xintercept = x_known, color = "red", lty = "dashed") +
+  labs(x = "x", y = "variance", title = "interpolated y0") +
+  scale_y_continuous(limits = c(0, .3)) +
+  theme_light()
+
+(p_var | p_var_inter) + plot_layout(axes = "collect", guides = "collect")
+```
+
+
